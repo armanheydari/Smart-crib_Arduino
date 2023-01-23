@@ -6,13 +6,17 @@
 #include "camera_pins.h"
 #include "DHT.h"
 
-#define DHTPIN 4 // Digital pin connected to thes DHT sensor
+#define DHTPIN 15 // Digital pin connected to thes DHT sensor
 #define DHTTYPE DHT11   // DHT 11
 #define pirPin 13
 
 
 int soundPin=14;
-boolean val=0;
+boolean sound_status=0;
+boolean motion_status=0;
+boolean humidity_status=0;
+boolean temprature_status=0;
+float t, h, hic=0;
 String header;
 unsigned long currentTime = millis();
 unsigned long previousTime = 0; 
@@ -33,7 +37,6 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);
   Serial.println();
-  // dht.begin();
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -132,61 +135,50 @@ void setup() {
   Serial.println("' to connect");
     
   xTaskCreatePinnedToCore(TaskWebServer90, "TaskWebServer90", 10000, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(SoundSensor, "SoundSensor", 10000, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(PIRSensor, "PIRSensor", 10000, NULL, 1, NULL, 1);
 }
 
 void loop() {
-  // SoundSensor();
-  // PIRSensor();
-  // DHTSensor();
+  DHTSensor();
+  delay(10000);
 }
 
-void SoundSensor() {
-  val =digitalRead(soundPin);
-  // when the sensor detects a signal above the threshold value, LED flashes
-  if (val==HIGH) {
-    Serial.print("sound detected.");
-    Serial.print('\n');
+void SoundSensor(void *pvParameters) {
+  (void) pvParameters;
+  while (true) {
+    if (digitalRead(soundPin)==HIGH) {
+      sound_status = 1;
+    }
   }
 }
 
-void PIRSensor() {
-   if(digitalRead(pirPin) == HIGH) {
-         Serial.println("Motion detected.");
-   }
-   if(digitalRead(pirPin) == LOW) {
-         Serial.println("Motion ended.");
-   }
+void PIRSensor(void *pvParameters) {
+    (void) pvParameters;
+    while (true) {   
+      if(digitalRead(pirPin) == HIGH) {
+        delay(2000);
+        if(digitalRead(pirPin) == HIGH) {
+            motion_status = 1;
+        }
+      }
+    }
 }
 
 void DHTSensor() {
-    delay(10000);
-    float h = dht.readHumidity();
+      // dht.begin();  
+    h = dht.readHumidity();
     // Read temperature as Celsius (the default)
-    float t = dht.readTemperature();
-    // Read temperature as Fahrenheit (isFahrenheit = true)
-    float f = dht.readTemperature(true);
+    t = dht.readTemperature();
     
     // Check if any reads failed and exit early (to try again).
-    if (isnan(h) || isnan(t) || isnan(f)) {
+    if (isnan(h) || isnan(t)) {
       Serial.println(F("Failed to read from DHT sensor!"));
       return;
     }
 
-    // Compute heat index in Fahrenheit (the default)
-    float hif = dht.computeHeatIndex(f, h);
     // Compute heat index in Celsius (isFahreheit = false)
-    float hic = dht.computeHeatIndex(t, h, false);
-    Serial.print(F("Humidity: "));
-    Serial.print(h);
-    Serial.print(F("%  Temperature: "));
-    Serial.print(t);
-    Serial.print(F("°C "));
-    Serial.print(f);
-    Serial.print(F("°F  Heat index: "));
-    Serial.print(hic);
-    Serial.print(F("°C "));
-    Serial.print(hif);
-    Serial.println(F("°F"));
+    hic = dht.computeHeatIndex(t, h, false);
 }
 
 void TaskWebServer90(void *pvParameters)  // This is a task.
@@ -220,7 +212,32 @@ void TaskWebServer90(void *pvParameters)  // This is a task.
                 
                 
                 if (header.indexOf("GET /mode") >= 0) {
-                    client.println(dht.readHumidity());
+                    client.print("Humidity: ");
+                    client.print(h);
+                    client.print("% \n");
+                    client.print("Temprature: ");
+
+                    client.print(t);
+                    client.print(" Celcius \n");     
+                    client.print("Heat index: ");
+                    client.print(hic);
+                    client.print(" Celcius \n");  
+                    if (sound_status > 0){
+                      client.println("sound detected.");
+                    }                  
+                    else {
+                      client.println("no sound.");
+                    }
+                    if (motion_status > 0){
+                      client.println("motion detected.");
+                    }                  
+                    else {
+                      client.println("no motion.");
+                    }
+                    sound_status=0;
+                    motion_status=0;
+                    humidity_status=0;
+                    temprature_status=0;
                 }    
             
                 break;
